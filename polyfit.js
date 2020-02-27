@@ -25,7 +25,7 @@ $(function() {
     .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
     .attr('width', width)
     .attr('height', height)
-    .attr('class', 'main')   
+    .attr('class', 'main')
 
     // the chart object, includes all margins
   var testChart = d3.select('#test-scatterplot')
@@ -47,7 +47,7 @@ $(function() {
   var data = {
     // These will be shown on the plot
     trainPoints : {
-      xdata : [], 
+      xdata : [],
       ydata : []
     },
     // These will be for evaluation purposes only
@@ -59,6 +59,7 @@ $(function() {
 
   var errors = {
     trainErrors : [],
+    trainErrorsRaimi : [],
     testErrors : [],
   }
 
@@ -117,9 +118,11 @@ $(function() {
 
     var xdata = [];
     var ydata = [];
+    var epsilons = [];
 
     // Generate the points
     // y = sum_{i=1}^K e^{a_i t} cos (w_i t + theta_i)
+    // Raw f(x)
     for (var i = 0; i < numPoints; i++) {
       x = Math.random() * (xmax - xmin) + xmin;
       xdata.push(x);
@@ -132,14 +135,31 @@ $(function() {
       ydata.push(y);
     }
 
+    // f(x)
     ydata = normalizeList(ydata);
-    // console.log(ydata);
+    console.log("ydata", ydata);
+
+    // Bias
+    var sum = ydata.reduce((a, b) => a + b, 0);
+    var avg = (sum / ydata.length) || 0;
+    var biasSquared = ydata.map(y => (y-avg)**2).reduce((a,b) => a+b, 0)**2;
+
+    // f(x) + e
     for (var i = 0; i < ydata.length; i++) {
-      // Hard coded translation from "randomness" on the slider to the variance
-      ydata[i] += random_normal(0, params.variance);
+      var epsilon = random_normal(0, params.variance)
+      epsilons.push(epsilon);
+      ydata[i] += epsilon;
       ydata[i] = Math.max(ydata[i], 0);
       ydata[i] = Math.min(ydata[i], 1);
     }
+
+    var sum = epsilons.reduce((a, b) => a + b, 0);
+    var avg = (sum / ydata.length) || 0;
+    var sigma = epsilons.map(epsilon => (epsilon-avg)**2).reduce((a,b) => a+b,0);
+
+    $('#train-bias').text(biasSquared.toPrecision(3));
+    $('#sigma1').text(sigma.toPrecision(3));
+    $('#sigma2').text(params.variance.toPrecision(3));
 
     return {
       xdata : xdata,
@@ -203,7 +223,7 @@ $(function() {
         .attr("class", "y axis")
         .call(yAxis);
     // draw the graph object
-    var g = main.append("svg:g"); 
+    var g = main.append("svg:g");
 
     // console.log(ydata);
     g.selectAll("scatter-dots")
@@ -223,7 +243,7 @@ $(function() {
         label: "Train",
         data: trainErrorsData
       },
-      { 
+      {
         label: "Test",
         data: testErrorsData
       }
@@ -288,7 +308,7 @@ $(function() {
     var y = d3.scale.linear()
       .domain([d3.min(points.ydata), d3.max(points.ydata)])
       .range([ height, 0 ]);
-    
+
     var lineFunction = d3.svg.line()
         .x(function(d, i) { return x(xdata[i]); })
         .y(function(d, i) { return y(ydata[i]); })
@@ -305,6 +325,13 @@ $(function() {
     var yhat = yHat(xdata, coefficients);
     var errors = numeric.sub(ydata, yhat);
     return numeric.norm2(errors) / Math.sqrt(xdata.length);
+  }
+
+  function msError(coefficients, xdata, ydata) {
+    var yhat = yHat(xdata, coefficients);
+    var errors = numeric.sub(ydata, yhat);
+
+    return errors.map(error => error**2).reduce((a,b) => a+b, 0) / errors.length;
   }
 
   function yHat(xdata, coefficients) {
@@ -390,7 +417,7 @@ $(function() {
     plotFit(trainMain, data.trainPoints, coefficients);
     plotFit(testMain, data.testPoints, coefficients);
 
-    trainError = rmsError(coefficients,
+    trainError = msError(coefficients,
       data.trainPoints.xdata, data.trainPoints.ydata);
     $('#train-err').text(trainError.toPrecision(3));
     errors.trainErrors[modelDegree] = trainError;
